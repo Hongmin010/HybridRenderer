@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\GitHub\HybridRenderer\HybridTracer\HybridTracer\Source\Interop\CudaNormalInteropTest.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\GitHub\HybridRenderer\HybridTracer\HybridTracer\Source\Interop\CudaNormalReader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\GitHub\HybridRenderer\HybridTracer\HybridTracer\Source\Interop\CudaDepthPositionReader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\GitHub\HybridRenderer\HybridTracer\HybridTracer\Source\Interop\DepthPositionValidation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\GitHub\HybridRenderer\HybridTracer\HybridTracer\Source\Renderer\DX12Context.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\GitHub\HybridRenderer\HybridTracer\HybridTracer\Source\Renderer\RasterGbufferPass.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\GitHub\HybridRenderer\HybridTracer\HybridTracer\Source\Renderer\DebugViewPass.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\GitHub\HybridRenderer\HybridTracer\HybridTracer\Source\Scene\Camera.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\GitHub\HybridRenderer\HybridTracer\HybridTracer\Source\Scene\Mesh.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\GitHub\HybridRenderer\HybridTracer\HybridTracer\Source\Scene\Scene.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\GitHub\HybridRenderer\HybridTracer\HybridTracer\Source\Optix\OptixSceneGAS.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\GitHub\HybridRenderer\HybridTracer\HybridTracer\Source\Optix\OptixTracePass.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\GitHub\HybridRenderer\HybridTracer\HybridTracer\Source\Optix\ShadowValidation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\GitHub\HybridRenderer\HybridTracer\CmakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{10E19BC0-3C71-37E1-B2AC-16419109C7EF}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

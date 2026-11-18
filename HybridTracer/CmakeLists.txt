@@ -1,0 +1,416 @@
+
+cmake_minimum_required(VERSION 3.20)
+
+project(HybridTracer LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+#
+# Executable
+#
+
+add_executable(HybridTracer
+
+    # Main
+    HybridTracer/Source/main.cpp
+
+    # Core
+    HybridTracer/Source/Core/Application.cpp
+
+    # Renderer
+    HybridTracer/Source/Renderer/DX12Context.cpp
+    HybridTracer/Source/Renderer/RasterGBufferPass.cpp
+    HybridTracer/Source/Renderer/DebugViewPass.cpp
+
+    # Scene
+    HybridTracer/Source/Scene/Camera.cpp
+    HybridTracer/Source/Scene/Mesh.cpp
+    HybridTracer/Source/Scene/Scene.cpp
+)
+
+#
+# Include Directories
+#
+
+target_include_directories(HybridTracer PRIVATE
+    HybridTracer/Source
+)
+
+#
+# Windows Unicode
+#
+
+target_compile_definitions(HybridTracer PRIVATE
+    UNICODE
+    _UNICODE
+)
+
+#
+# UTF-8
+#
+
+target_compile_options(HybridTracer PRIVATE
+    /utf-8
+)
+
+#
+# DirectX 12 Libraries
+#
+
+target_link_libraries(HybridTracer PRIVATE
+    d3d12
+    dxgi
+    d3dcompiler
+)
+
+add_library(HybridTracerSceneFile STATIC HybridTracer/Source/Scene/SceneFile.cpp)
+target_compile_definitions(HybridTracerSceneFile PRIVATE UNICODE _UNICODE NOMINMAX)
+target_compile_options(HybridTracerSceneFile PRIVATE /utf-8 /W4)
+target_link_libraries(HybridTracerSceneFile PRIVATE xmllite shlwapi)
+target_link_libraries(HybridTracer PRIVATE HybridTracerSceneFile)
+
+add_custom_target(HybridTracerSceneAssets
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:HybridTracer>/Scenes"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/Scenes/Default.xml"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Scenes/Studio.xml"
+        "$<TARGET_FILE_DIR:HybridTracer>/Scenes"
+    VERBATIM)
+add_dependencies(HybridTracer HybridTracerSceneAssets)
+
+# Probes use ordinary C++ plus the CUDA Driver API. The position kernel uses NVRTC.
+# Keep CUDA optional so the existing raster renderer builds without the toolkit.
+option(HYBRIDTRACER_BUILD_INTEROP_TEST "Build the DX12/CUDA interop probes" OFF)
+option(HYBRIDTRACER_BUILD_OPTIX_GAS_TEST "Build the OptiX GAS and shadow trace probes" OFF)
+option(HYBRIDTRACER_ENABLE_HYBRID_RENDERER "Run the windowed DX12/CUDA/OptiX diffuse hybrid renderer" OFF)
+set(HYBRIDTRACER_OPTIX_ROOT "" CACHE PATH "Root directory of the installed OptiX SDK")
+if(HYBRIDTRACER_BUILD_OPTIX_GAS_TEST AND NOT HYBRIDTRACER_BUILD_INTEROP_TEST)
+    message(FATAL_ERROR "The OptiX GAS probe requires HYBRIDTRACER_BUILD_INTEROP_TEST=ON")
+endif()
+
+if(HYBRIDTRACER_BUILD_INTEROP_TEST OR HYBRIDTRACER_ENABLE_HYBRID_RENDERER)
+    find_package(CUDAToolkit 12.0 REQUIRED)
+endif()
+if(HYBRIDTRACER_BUILD_OPTIX_GAS_TEST OR HYBRIDTRACER_ENABLE_HYBRID_RENDERER)
+    find_path(HYBRIDTRACER_OPTIX_INCLUDE_DIR NAMES optix.h
+        HINTS "${HYBRIDTRACER_OPTIX_ROOT}/include" "$ENV{OPTIX_ROOT}/include" "$ENV{OptiX_INSTALL_DIR}/include"
+        REQUIRED)
+endif()
+
+if(HYBRIDTRACER_BUILD_INTEROP_TEST)
+
+    add_executable(HybridTracerInteropTest
+        HybridTracer/Source/Interop/CudaInteropTest.cpp
+        HybridTracer/Source/Renderer/DX12Context.cpp
+    )
+    target_include_directories(HybridTracerInteropTest PRIVATE HybridTracer/Source)
+    target_compile_definitions(HybridTracerInteropTest PRIVATE UNICODE _UNICODE NOMINMAX)
+    target_compile_options(HybridTracerInteropTest PRIVATE /utf-8 /W4)
+    target_link_libraries(HybridTracerInteropTest PRIVATE d3d12 dxgi CUDA::cuda_driver)
+
+    enable_testing()
+    add_test(NAME DX12CudaInterop COMMAND HybridTracerInteropTest --iterations 256)
+    set_tests_properties(DX12CudaInterop PROPERTIES TIMEOUT 60)
+
+    add_executable(HybridTracerNormalInteropTest
+        HybridTracer/Source/Interop/CudaNormalInteropTest.cpp
+        HybridTracer/Source/Interop/CudaNormalReader.cpp
+        HybridTracer/Source/Interop/CudaDepthPositionReader.cpp
+        HybridTracer/Source/Interop/DepthPositionValidation.cpp
+        HybridTracer/Source/Renderer/DX12Context.cpp
+        HybridTracer/Source/Renderer/RasterGBufferPass.cpp
+        HybridTracer/Source/Renderer/DebugViewPass.cpp
+        HybridTracer/Source/Scene/Camera.cpp
+        HybridTracer/Source/Scene/Mesh.cpp
+        HybridTracer/Source/Scene/Scene.cpp
+    )
+    target_include_directories(HybridTracerNormalInteropTest PRIVATE HybridTracer/Source)
+    target_compile_definitions(HybridTracerNormalInteropTest PRIVATE UNICODE _UNICODE NOMINMAX)
+    target_compile_definitions(HybridTracerNormalInteropTest PRIVATE
+        HYBRIDTRACER_CUDA_INCLUDE_DIR="${CUDAToolkit_INCLUDE_DIRS}")
+    target_compile_options(HybridTracerNormalInteropTest PRIVATE /utf-8 /W4)
+    target_link_libraries(HybridTracerNormalInteropTest PRIVATE d3d12 dxgi d3dcompiler CUDA::cuda_driver CUDA::nvrtc)
+    file(GLOB HYBRIDTRACER_NVRTC_DLLS
+        "${CUDAToolkit_BIN_DIR}/nvrtc64*.dll"
+        "${CUDAToolkit_BIN_DIR}/nvrtc-builtins64*.dll"
+    )
+    if(NOT HYBRIDTRACER_NVRTC_DLLS)
+        message(FATAL_ERROR "CUDA NVRTC runtime DLLs were not found in ${CUDAToolkit_BIN_DIR}")
+    endif()
+    add_executable(HybridTracerDiffuseBSDFTest
+        HybridTracer/Source/Validation/DiffuseBSDFTest.cpp
+        HybridTracer/Source/Renderer/DX12Context.cpp)
+    target_include_directories(HybridTracerDiffuseBSDFTest PRIVATE HybridTracer/Source)
+    target_compile_definitions(HybridTracerDiffuseBSDFTest PRIVATE UNICODE _UNICODE NOMINMAX
+        HYBRIDTRACER_CUDA_INCLUDE_DIR="${CUDAToolkit_INCLUDE_DIRS}")
+    target_compile_options(HybridTracerDiffuseBSDFTest PRIVATE /utf-8 /W4)
+    target_link_libraries(HybridTracerDiffuseBSDFTest PRIVATE d3d12 dxgi CUDA::cuda_driver CUDA::nvrtc)
+    # Always refresh runtime sources, including header-only edits, without requiring NVCC.
+    add_custom_target(HybridTracerDiffuseBSDFRuntime
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:HybridTracerDiffuseBSDFTest>/Shaders"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DiffuseBSDFTypes.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DiffuseBSDF.cuh"
+            "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DiffuseBSDFProbeData.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DiffuseBSDFProbe.cu"
+            "$<TARGET_FILE_DIR:HybridTracerDiffuseBSDFTest>/Shaders"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${HYBRIDTRACER_NVRTC_DLLS}
+            "$<TARGET_FILE_DIR:HybridTracerDiffuseBSDFTest>"
+        VERBATIM)
+    add_dependencies(HybridTracerDiffuseBSDFTest HybridTracerDiffuseBSDFRuntime)
+    add_test(NAME CudaDiffuseBSDF COMMAND HybridTracerDiffuseBSDFTest --samples)
+    set_tests_properties(CudaDiffuseBSDF PROPERTIES TIMEOUT 60)
+    add_custom_command(TARGET HybridTracerNormalInteropTest POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:HybridTracerNormalInteropTest>/Shaders"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/Raster.hlsl"
+            "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DebugView.hlsl"
+            "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/ReconstructWorldPosition.cu"
+            "$<TARGET_FILE_DIR:HybridTracerNormalInteropTest>/Shaders"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${HYBRIDTRACER_NVRTC_DLLS}
+            "$<TARGET_FILE_DIR:HybridTracerNormalInteropTest>"
+    )
+    add_test(NAME DX12CudaNormalInterop COMMAND HybridTracerNormalInteropTest --frames 8 --samples)
+    add_test(NAME DX12CudaNormalFullResolution COMMAND HybridTracerNormalInteropTest --frames 4 --full-resolution)
+    set_tests_properties(DX12CudaNormalInterop DX12CudaNormalFullResolution PROPERTIES TIMEOUT 60)
+    add_test(NAME DX12CudaDepthPosition COMMAND HybridTracerNormalInteropTest --depth-position --frames 4 --samples)
+    add_test(NAME DX12CudaDepthPositionFullResolution COMMAND HybridTracerNormalInteropTest --depth-position --frames 4 --full-resolution)
+    set_tests_properties(DX12CudaDepthPosition DX12CudaDepthPositionFullResolution PROPERTIES TIMEOUT 60)
+    add_test(NAME DX12CudaSurfaceInputs COMMAND HybridTracerNormalInteropTest --surface-inputs --frames 4 --samples)
+    add_test(NAME DX12CudaSurfaceInputsFullResolution COMMAND HybridTracerNormalInteropTest --surface-inputs --frames 4 --full-resolution)
+    set_tests_properties(DX12CudaSurfaceInputs DX12CudaSurfaceInputsFullResolution PROPERTIES TIMEOUT 60)
+
+    if(HYBRIDTRACER_BUILD_OPTIX_GAS_TEST)
+        target_sources(HybridTracerNormalInteropTest PRIVATE
+            HybridTracer/Source/Optix/OptixSceneGAS.cpp
+            HybridTracer/Source/Optix/OptixTracePass.cpp
+            HybridTracer/Source/Optix/ShadowValidation.cpp)
+        target_include_directories(HybridTracerNormalInteropTest SYSTEM PRIVATE "${HYBRIDTRACER_OPTIX_INCLUDE_DIR}")
+        target_compile_definitions(HybridTracerNormalInteropTest PRIVATE HYBRIDTRACER_HAS_OPTIX_GAS=1
+            HYBRIDTRACER_OPTIX_INCLUDE_DIR="${HYBRIDTRACER_OPTIX_INCLUDE_DIR}")
+        add_custom_command(TARGET HybridTracerNormalInteropTest POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixShadow.cu"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixTraceShared.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixSceneData.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/SurfaceHit.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixSurface.cuh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/IndirectLighting.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixIndirect.cuh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DiffuseBSDFTypes.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DiffuseBSDF.cuh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/SurfaceInput.h"
+                "$<TARGET_FILE_DIR:HybridTracerNormalInteropTest>/Shaders")
+        add_test(NAME OptixSceneGAS COMMAND HybridTracerNormalInteropTest --optix-gas --frames 4 --samples)
+        set_tests_properties(OptixSceneGAS PROPERTIES TIMEOUT 60)
+        add_test(NAME OptixShadowTrace COMMAND HybridTracerNormalInteropTest --optix-shadow --frames 4 --samples)
+        add_test(NAME OptixShadowTraceFullResolution COMMAND HybridTracerNormalInteropTest --optix-shadow --frames 4 --full-resolution)
+        set_tests_properties(OptixShadowTrace OptixShadowTraceFullResolution PROPERTIES TIMEOUT 120)
+        add_executable(HybridTracerSurfaceQueryTest
+            HybridTracer/Source/Validation/OptixSurfaceQueryTest.cpp
+            HybridTracer/Source/Optix/OptixSceneGAS.cpp
+            HybridTracer/Source/Optix/OptixTracePass.cpp
+            HybridTracer/Source/Renderer/DX12Context.cpp
+            HybridTracer/Source/Scene/Mesh.cpp
+            HybridTracer/Source/Scene/Scene.cpp)
+        target_include_directories(HybridTracerSurfaceQueryTest PRIVATE HybridTracer/Source)
+        target_include_directories(HybridTracerSurfaceQueryTest SYSTEM PRIVATE "${HYBRIDTRACER_OPTIX_INCLUDE_DIR}")
+        target_compile_definitions(HybridTracerSurfaceQueryTest PRIVATE UNICODE _UNICODE NOMINMAX
+            HYBRIDTRACER_CUDA_INCLUDE_DIR="${CUDAToolkit_INCLUDE_DIRS}"
+            HYBRIDTRACER_OPTIX_INCLUDE_DIR="${HYBRIDTRACER_OPTIX_INCLUDE_DIR}")
+        target_compile_options(HybridTracerSurfaceQueryTest PRIVATE /utf-8 /W4)
+        target_link_libraries(HybridTracerSurfaceQueryTest PRIVATE d3d12 dxgi CUDA::cuda_driver CUDA::nvrtc)
+        add_custom_target(HybridTracerSurfaceQueryRuntime
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:HybridTracerSurfaceQueryTest>/Shaders"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixShadow.cu"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixTraceShared.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixSceneData.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/SurfaceHit.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixSurface.cuh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/IndirectLighting.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixIndirect.cuh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DiffuseBSDFTypes.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DiffuseBSDF.cuh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/SurfaceInput.h"
+                "$<TARGET_FILE_DIR:HybridTracerSurfaceQueryTest>/Shaders"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${HYBRIDTRACER_NVRTC_DLLS} "$<TARGET_FILE_DIR:HybridTracerSurfaceQueryTest>"
+            VERBATIM)
+        add_dependencies(HybridTracerSurfaceQueryTest HybridTracerSurfaceQueryRuntime)
+        add_test(NAME OptixSurfaceQueries COMMAND HybridTracerSurfaceQueryTest --samples)
+        set_tests_properties(OptixSurfaceQueries PROPERTIES TIMEOUT 60)
+        add_executable(HybridTracerIndirectTest
+            HybridTracer/Source/Validation/IndirectLightingTest.cpp
+            HybridTracer/Source/Optix/OptixSceneGAS.cpp
+            HybridTracer/Source/Optix/OptixTracePass.cpp
+            HybridTracer/Source/Renderer/DX12Context.cpp
+            HybridTracer/Source/Scene/Mesh.cpp
+            HybridTracer/Source/Scene/Scene.cpp)
+        target_include_directories(HybridTracerIndirectTest PRIVATE HybridTracer/Source)
+        target_include_directories(HybridTracerIndirectTest SYSTEM PRIVATE "${HYBRIDTRACER_OPTIX_INCLUDE_DIR}")
+        target_compile_definitions(HybridTracerIndirectTest PRIVATE UNICODE _UNICODE NOMINMAX
+            HYBRIDTRACER_CUDA_INCLUDE_DIR="${CUDAToolkit_INCLUDE_DIRS}"
+            HYBRIDTRACER_OPTIX_INCLUDE_DIR="${HYBRIDTRACER_OPTIX_INCLUDE_DIR}")
+        target_compile_options(HybridTracerIndirectTest PRIVATE /utf-8 /W4)
+        target_link_libraries(HybridTracerIndirectTest PRIVATE d3d12 dxgi CUDA::cuda_driver CUDA::nvrtc)
+        add_custom_target(HybridTracerIndirectRuntime
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:HybridTracerIndirectTest>/Shaders"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixShadow.cu"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixTraceShared.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixSceneData.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/SurfaceHit.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixSurface.cuh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/IndirectLighting.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixIndirect.cuh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DiffuseBSDFTypes.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DiffuseBSDF.cuh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/SurfaceInput.h"
+                "$<TARGET_FILE_DIR:HybridTracerIndirectTest>/Shaders"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${HYBRIDTRACER_NVRTC_DLLS} "$<TARGET_FILE_DIR:HybridTracerIndirectTest>"
+            VERBATIM)
+        add_dependencies(HybridTracerIndirectTest HybridTracerIndirectRuntime)
+        add_test(NAME OptixIndirectLighting COMMAND HybridTracerIndirectTest --samples)
+        set_tests_properties(OptixIndirectLighting PROPERTIES TIMEOUT 60)
+    endif()
+endif()
+
+if(HYBRIDTRACER_ENABLE_HYBRID_RENDERER)
+    add_library(HybridRenderer STATIC
+        HybridTracer/Source/Interop/CudaDepthPositionReader.cpp
+        HybridTracer/Source/Interop/SharedShadowBuffer.cpp
+        HybridTracer/Source/Optix/OptixSceneGAS.cpp
+        HybridTracer/Source/Optix/OptixTracePass.cpp
+        HybridTracer/Source/Renderer/FullscreenPipeline.cpp
+        HybridTracer/Source/Renderer/CompositePass.cpp
+        HybridTracer/Source/Renderer/ToneMapPass.cpp
+        HybridTracer/Source/Renderer/HybridFramePipeline.cpp
+        HybridTracer/Source/Renderer/FrameProfiler.cpp
+        HybridTracer/Source/Renderer/TemporalAccumulationPass.cpp)
+    target_include_directories(HybridRenderer PUBLIC HybridTracer/Source)
+    target_include_directories(HybridRenderer SYSTEM PUBLIC "${HYBRIDTRACER_OPTIX_INCLUDE_DIR}")
+    target_compile_definitions(HybridRenderer PUBLIC UNICODE _UNICODE NOMINMAX
+        PRIVATE HYBRIDTRACER_CUDA_INCLUDE_DIR="${CUDAToolkit_INCLUDE_DIRS}"
+        HYBRIDTRACER_OPTIX_INCLUDE_DIR="${HYBRIDTRACER_OPTIX_INCLUDE_DIR}")
+    target_compile_options(HybridRenderer PRIVATE /utf-8 /W4)
+    target_link_libraries(HybridRenderer PUBLIC d3d12 dxgi d3dcompiler CUDA::cuda_driver CUDA::nvrtc)
+    target_link_libraries(HybridTracer PRIVATE HybridRenderer)
+    target_compile_definitions(HybridTracer PRIVATE HYBRIDTRACER_HAS_HYBRID_RENDERER=1)
+
+    file(GLOB HYBRIDTRACER_HYBRID_NVRTC_DLLS
+        "${CUDAToolkit_BIN_DIR}/nvrtc64*.dll" "${CUDAToolkit_BIN_DIR}/nvrtc-builtins64*.dll")
+    if(NOT HYBRIDTRACER_HYBRID_NVRTC_DLLS)
+        message(FATAL_ERROR "CUDA NVRTC runtime DLLs not found")
+    endif()
+    function(hybrid_runtime target)
+        add_custom_target(${target}Runtime
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>/Shaders"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/Raster.hlsl"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DebugView.hlsl"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/ReconstructWorldPosition.cu"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixShadow.cu"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixTraceShared.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixSceneData.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/SurfaceHit.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixSurface.cuh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/IndirectLighting.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/OptixIndirect.cuh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DiffuseBSDFTypes.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DiffuseBSDF.cuh"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/SurfaceInput.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/TemporalAccumulation.cu"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/Fullscreen.hlsli"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/Composite.hlsl"
+                "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/ToneMap.hlsl"
+                "$<TARGET_FILE_DIR:${target}>/Shaders"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${HYBRIDTRACER_HYBRID_NVRTC_DLLS} "$<TARGET_FILE_DIR:${target}>"
+            VERBATIM)
+        add_dependencies(${target} ${target}Runtime)
+    endfunction()
+    hybrid_runtime(HybridTracer)
+    add_executable(HybridTracerCompositeTest
+        HybridTracer/Source/Interop/HybridCompositeTest.cpp
+        HybridTracer/Source/Optix/ShadowValidation.cpp
+        HybridTracer/Source/Renderer/DX12Context.cpp
+        HybridTracer/Source/Renderer/RasterGBufferPass.cpp
+        HybridTracer/Source/Renderer/DebugViewPass.cpp
+        HybridTracer/Source/Scene/Camera.cpp
+        HybridTracer/Source/Scene/Mesh.cpp
+        HybridTracer/Source/Scene/Scene.cpp)
+    target_link_libraries(HybridTracerCompositeTest PRIVATE HybridRenderer HybridTracerSceneFile)
+    target_compile_options(HybridTracerCompositeTest PRIVATE /utf-8 /W4)
+    hybrid_runtime(HybridTracerCompositeTest)
+    enable_testing()
+    add_test(NAME HybridComposite COMMAND HybridTracerCompositeTest --captures)
+    add_test(NAME HybridCompositeFullResolution COMMAND HybridTracerCompositeTest --full-resolution)
+    set_tests_properties(HybridComposite HybridCompositeFullResolution PROPERTIES TIMEOUT 120)
+    add_test(NAME HybridCompositeProfiled COMMAND HybridTracerCompositeTest --profile)
+    set_tests_properties(HybridCompositeProfiled PROPERTIES TIMEOUT 120)
+    add_test(NAME HybridCompositeMixedLights COMMAND HybridTracerCompositeTest
+        --scene "${CMAKE_CURRENT_SOURCE_DIR}/Scenes/Studio.xml" --bounces 2)
+    set_tests_properties(HybridCompositeMixedLights PROPERTIES TIMEOUT 120)
+    add_executable(HybridTracerBenchmark
+        HybridTracer/Source/Validation/FrameBenchmark.cpp
+        HybridTracer/Source/Renderer/DX12Context.cpp
+        HybridTracer/Source/Renderer/RasterGBufferPass.cpp
+        HybridTracer/Source/Renderer/DebugViewPass.cpp
+        HybridTracer/Source/Scene/Camera.cpp
+        HybridTracer/Source/Scene/Mesh.cpp
+        HybridTracer/Source/Scene/Scene.cpp)
+    target_link_libraries(HybridTracerBenchmark PRIVATE HybridRenderer HybridTracerSceneFile)
+    target_compile_options(HybridTracerBenchmark PRIVATE /utf-8 /W4)
+    hybrid_runtime(HybridTracerBenchmark)
+    add_dependencies(HybridTracerBenchmark HybridTracerSceneAssets)
+    add_test(NAME HybridTimingBenchmark COMMAND HybridTracerBenchmark --width 321 --height 181 --warmup 2 --frames 4 --check --csv TimingSmoke.csv)
+    set_tests_properties(HybridTimingBenchmark PROPERTIES TIMEOUT 120)
+    add_executable(HybridTracerTemporalMathTest
+        HybridTracer/Source/Validation/TemporalMathTest.cpp
+        HybridTracer/Source/Renderer/DX12Context.cpp)
+    target_link_libraries(HybridTracerTemporalMathTest PRIVATE HybridRenderer)
+    target_compile_options(HybridTracerTemporalMathTest PRIVATE /utf-8 /W4)
+    hybrid_runtime(HybridTracerTemporalMathTest)
+    add_test(NAME CudaTemporalAccumulation COMMAND HybridTracerTemporalMathTest)
+    set_tests_properties(CudaTemporalAccumulation PROPERTIES TIMEOUT 60)
+    add_executable(HybridTracerTemporalFrameTest
+        HybridTracer/Source/Validation/TemporalFrameTest.cpp
+        HybridTracer/Source/Renderer/DX12Context.cpp
+        HybridTracer/Source/Renderer/RasterGBufferPass.cpp
+        HybridTracer/Source/Renderer/DebugViewPass.cpp
+        HybridTracer/Source/Scene/Camera.cpp
+        HybridTracer/Source/Scene/Mesh.cpp
+        HybridTracer/Source/Scene/Scene.cpp)
+    target_link_libraries(HybridTracerTemporalFrameTest PRIVATE HybridRenderer)
+    target_compile_options(HybridTracerTemporalFrameTest PRIVATE /utf-8 /W4)
+    hybrid_runtime(HybridTracerTemporalFrameTest)
+    add_test(NAME HybridTemporalAccumulation COMMAND HybridTracerTemporalFrameTest --captures)
+    add_test(NAME HybridTemporalMovingBenchmark COMMAND HybridTracerBenchmark --width 321 --height 181 --warmup 2 --frames 4 --moving-camera --check --csv TimingMoving.csv)
+    set_tests_properties(HybridTemporalAccumulation HybridTemporalMovingBenchmark PROPERTIES TIMEOUT 120)
+    # Window/swapchain smoke is run explicitly, separately from headless CTest.
+endif()
+
+#
+# Shader Copy
+#
+# 실행 파일 옆의 Shaders 폴더로 복사
+#
+
+add_custom_command(
+    TARGET HybridTracer
+    POST_BUILD
+
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:HybridTracer>/Shaders"
+
+    # Raster Shader
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/Raster.hlsl"
+        "$<TARGET_FILE_DIR:HybridTracer>/Shaders/Raster.hlsl"
+
+    # Debug View Shader
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/HybridTracer/Shaders/DebugView.hlsl"
+        "$<TARGET_FILE_DIR:HybridTracer>/Shaders/DebugView.hlsl"
+)
+

@@ -1,0 +1,2 @@
+width,height,frame_spp,accumulated_frames,accumulated_spp,reference_spp,raw_mse,accumulated_mse,rmse_ratio,max_mean_error
+321,181,4,64,256,4096,0.000422180709088,6.90978921993e-06,0.12793318358,6.67059794068e-08

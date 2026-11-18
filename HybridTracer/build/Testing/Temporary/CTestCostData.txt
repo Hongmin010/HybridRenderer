@@ -1,0 +1,22 @@
+DX12CudaInterop 14 0.121393
+DX12CudaNormalInterop 13 0.128567
+DX12CudaNormalFullResolution 13 0.175231
+DX12CudaDepthPosition 12 0.191759
+DX12CudaDepthPositionFullResolution 12 0.159554
+DX12CudaSurfaceInputs 11 0.180063
+DX12CudaSurfaceInputsFullResolution 11 0.234434
+OptixSceneGAS 10 0.195148
+OptixShadowTrace 9 0.550498
+OptixShadowTraceFullResolution 9 0.72463
+HybridComposite 9 0.622575
+HybridCompositeFullResolution 9 1.41128
+CudaDiffuseBSDF 7 0.331732
+OptixSurfaceQueries 6 0.716867
+OptixIndirectLighting 5 3.29965
+HybridCompositeProfiled 5 1.89626
+HybridTimingBenchmark 4 1.04821
+CudaTemporalAccumulation 3 0.703277
+HybridTemporalAccumulation 3 5.40137
+HybridTemporalMovingBenchmark 3 1.91973
+HybridCompositeMixedLights 3 3.27441
+---
