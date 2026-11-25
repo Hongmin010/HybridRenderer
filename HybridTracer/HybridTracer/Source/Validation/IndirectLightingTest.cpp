@@ -373,8 +373,14 @@ namespace
         std::vector<IndirectSampleDebug> debug(Count);
         CheckCuda(cuMemcpyDtoH(debug.data(),pass.GetDeviceIndirectDebug(),Count*sizeof(IndirectSampleDebug)),"cuMemcpyDtoH(light test hits)");
         double indirectPanelSum=0,indirectPanelReference=0;
+        bool weightedLightSample=false, bsdfConnection=false;
         for (size_t i=0; i<Count; ++i)
         {
+            // From the central probe, a single unweighted panel sample contributes
+            // between 4/(3*pi) at a corner and 3/pi at the center.
+            const auto &primary = indirect[AdditionalDirectPlane*Count+i];
+            weightedLightSample |= primary.G < 4/(3*Pi)-1e-5;
+            bsdfConnection |= primary.G > 3/Pi+1e-5;
             const auto &hit=debug[i].Hit;
             double expectedPoint=0;
             if (hit.Valid && hit.FrontFace && hit.PositionY>3)
@@ -387,6 +393,8 @@ namespace
                 "Analytic point lighting at the secondary hit differs from OptiX.");
             indirectPanelSum+=indirect[i].B;
         }
+        Require(weightedLightSample && bsdfConnection,
+            "Panel samples must include both PDF-weighted light samples and BSDF connections.");
         Require(indirectPanelReference>0 && std::abs(indirectPanelSum/indirectPanelReference-1)<0.025,
             "Indirect panel irradiance disagrees with the independent quadrature.");
         std::cout<<"PASS: point and panel after one bounce. Indirect panel mean "<<indirectPanelSum/Count

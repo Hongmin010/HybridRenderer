@@ -2,6 +2,7 @@
 
 Lambert 확산 재질에서 직접광과 [최대 8회 간접 반사](Multi_Bounce_Indirect.md)를 계산한다.
 방향광, 점광원, 사각형 면광원을 한 장면에서 함께 사용할 수 있다.
+사각형 면광원은 광원 표본과 코사인 BSDF 표본의 기여를 MIS로 합친다.
 [프레임 누적](Temporal_Accumulation.md)과 [GPU/CPU 계측](Frame_Timing.md)을 지원한다.
 
 ```text
@@ -71,6 +72,17 @@ Raster의 임시 RT0는 hybrid 최종 합성에서 읽지 않는다.
   `rectangle`은 `center`, 두 반변 벡터 `half_u`, `half_v`, `radiance`를 받는다.
 - 방향광 한 개를 제외한 나머지 광원은 최대 16개다. 점광원과 면광원의 그림자 광선은
   광원 위치까지 추적한다. 사각형은 `half_u × half_v` 방향으로 발광하는 가상 발광판이다.
+
+### 사각형 면광원 MIS
+
+첫 표면과 각 간접 반사 표면에서 광원마다 면적 표본 하나를 뽑고, 같은 BSDF 반사 방향과 사각형의 교차도 평가한다.
+광원 PDF는 `거리² / (면적 × 광원 쪽 코사인)`으로 입체각 PDF에 맞춘 뒤, 제곱 PDF 기반 power heuristic을 양쪽에 적용한다.
+씬에 도형으로 등록되지 않은 사각형 광원도 같은 방식으로 평가할 수 있도록 광원의 사각형을 직접 교차 검사한다.
+두 표본 모두 광원까지의 구간에서 가림을 검사하며, 다음 간접 반사에 도달한 표면의 발광을 다시 더하지 않는다.
+방향광과 점광원은 기존 직접광 식을 사용한다.
+
+PDF 가중치와 델타 광원 처리는 [Mitsuba 3의 path integrator](https://github.com/mitsuba-renderer/mitsuba3/blob/v3.6.0/src/integrators/path.cpp#L170)와 대조했다.
+유한 광원까지의 가림 검사는 [RoyalTracer의 직접광 경로](https://github.com/Royal-Project-Group/royaltracer/blob/fae76756d42d1c36af0c558f24f24017d8dded35/backend/src/raytracer/kernelFiles/KernelLights.h#L62)와 NVIDIA OptiX SDK의 `optixPathTracer` 예제를 참고했다.
 
 ### Bitterli Cornell Box
 

@@ -4,6 +4,7 @@
 namespace HybridIndirect
 {
     using HybridBSDF::Vector3;
+    using HybridBSDF::DiffuseSample;
 
     // Integer avalanche mixer; distinct counter dimensions, 24-bit [0,1) conversion.
     __device__ __forceinline__ unsigned int Mix(unsigned int x)
@@ -52,8 +53,54 @@ namespace HybridIndirect
         bool Visible;
     };
 
+    // Both strategies use a solid-angle PDF. The caller can divide both PDFs by
+    // the light PDF, so the pair is (1, p_bsdf/p_light) without a grazing division.
+    __device__ __forceinline__ float PowerWeight(float sampled, float other)
+    {
+        if (sampled < other)
+        {
+            const float ratio = sampled/other;
+            return ratio*ratio/(1.0f+ratio*ratio);
+        }
+        const float ratio = other/sampled;
+        return 1.0f/(1.0f+ratio*ratio);
+    }
+
+    __device__ __forceinline__ float InverseRectanglePdf(const TraceLight &light, float distanceSquared,
+        Vector3 direction)
+    {
+        return light.Area*fmaxf(-HybridBSDF::Dot(ReadVector(light.Normal),direction),0.0f)/distanceSquared;
+    }
+
+    __device__ __forceinline__ bool LightVisible(TraceLightKind kind, Vector3 position, Vector3 ng,
+        Vector3 direction, Vector3 target)
+    {
+        using namespace HybridBSDF;
+        const auto &settings = params.Settings;
+        const float3 origin = Offset(position,ng,settings.NormalOffset);
+        float tMax = settings.TMax;
+        if (kind != TraceLightKind::Directional)
+        {
+            // Aim at the same emitter sample after the origin offset. Geometry behind it cannot shadow it.
+            const Vector3 segment = {target.X-origin.x,target.Y-origin.y,target.Z-origin.z};
+            const float distance = sqrtf(Dot(segment,segment));
+            if (distance <= 2*settings.TMin) return true;
+            direction = Scale(segment,1.0f/distance);
+            tMax = fminf(tMax,distance-settings.TMin);
+        }
+        return VisibleFrom(origin,direction,settings.TMin,tMax);
+    }
+
+    __device__ __forceinline__ DiffuseSample SampleVertex(unsigned int pixel, unsigned int sample,
+        unsigned int vertex, Vector3 albedo, Vector3 normal, Vector3 outgoing)
+    {
+        const auto counter = sample+vertex*MaxIndirectSamples;
+        return HybridBSDF::SampleDiffuse(albedo,normal,outgoing,Uniform(pixel,counter,0),Uniform(pixel,counter,1));
+    }
+
     __device__ __forceinline__ LightContribution SampleLight(unsigned int pixel, unsigned int sample,
-        unsigned int vertex, unsigned int lightIndex, Vector3 position, Vector3 ng, Vector3 ns, Vector3 albedo)
+        unsigned int vertex, unsigned int lightIndex, Vector3 position, Vector3 ng, Vector3 ns,
+        Vector3 wo, Vector3 albedo)
     {
         using namespace HybridBSDF;
         const auto &light = params.AdditionalLights[lightIndex];
@@ -72,9 +119,13 @@ namespace HybridIndirect
             const float distanceSquared = Dot(delta,delta);
             if (!(distanceSquared > 0) || !isfinite(distanceSquared)) return {};
             direction = Scale(delta,rsqrtf(distanceSquared));
-            weight = 1.0f/distanceSquared;
             if (light.Kind == TraceLightKind::Rectangle)
-                weight *= light.Area*fmaxf(-Dot(ReadVector(light.Normal),direction),0.0f);
+            {
+                const float inversePdf = InverseRectanglePdf(light,distanceSquared,direction);
+                if (!(inversePdf > 0) || !isfinite(inversePdf)) return {};
+                weight = inversePdf*PowerWeight(1.0f,PdfDiffuse(ns,direction,wo)*inversePdf);
+            }
+            else weight = 1.0f/distanceSquared;
         }
         const float cosine = Dot(ns,direction);
         if (cosine <= 0 || Dot(ng,direction) <= 0 || !(weight > 0) || !isfinite(weight)) return {};
@@ -82,19 +133,52 @@ namespace HybridIndirect
         const Vector3 unoccluded = {albedo.X*light.Emission[0]*factor,
             albedo.Y*light.Emission[1]*factor,albedo.Z*light.Emission[2]*factor};
         if (unoccluded.X == 0 && unoccluded.Y == 0 && unoccluded.Z == 0) return {};
-        const auto &settings = params.Settings;
-        const float3 origin = Offset(position,ng,settings.NormalOffset);
-        float tMax = settings.TMax;
-        if (light.Kind != TraceLightKind::Directional)
-        {
-            // Aim at the same emitter sample after the origin offset. Geometry behind it cannot shadow it.
-            const Vector3 segment = {target.X-origin.x,target.Y-origin.y,target.Z-origin.z};
-            const float distance = sqrtf(Dot(segment,segment));
-            if (distance <= 2*settings.TMin) return {unoccluded,true};
-            direction = Scale(segment,1.0f/distance);
-            tMax = fminf(tMax,distance-settings.TMin);
-        }
-        return {unoccluded,VisibleFrom(origin,direction,settings.TMin,tMax)};
+        return {unoccluded,LightVisible(light.Kind,position,ng,direction,target)};
+    }
+
+    __device__ __forceinline__ LightContribution ConnectBsdfToRectangle(const TraceLight &light,
+        Vector3 position, Vector3 ng, const DiffuseSample &sample)
+    {
+        using namespace HybridBSDF;
+        const Vector3 direction = sample.Direction;
+        const float lightCosine = -Dot(ReadVector(light.Normal),direction);
+        if (!sample.Valid || lightCosine <= 0 || Dot(ng,direction) <= 0) return {};
+
+        // Native XML rectangles can be virtual. Intersect the emitter footprint
+        // analytically for both kinds, then use the same visibility test as NEE.
+        const auto center = ReadVector(light.PositionOrDirection);
+        const Vector3 relative = {position.X-center.X,position.Y-center.Y,position.Z-center.Z};
+        const float distance = Dot(relative,ReadVector(light.Normal))/lightCosine;
+        const float distanceSquared = distance*distance;
+        if (!(distance > 0) || !(distanceSquared > 0) || !isfinite(distanceSquared)) return {};
+        const auto step = Scale(direction,distance);
+        const Vector3 offset = {relative.X+step.X,relative.Y+step.Y,relative.Z+step.Z};
+        const auto u = ReadVector(light.HalfU), v = ReadVector(light.HalfV);
+        if (fabsf(Dot(offset,u)) > Dot(u,u) || fabsf(Dot(offset,v)) > Dot(v,v)) return {};
+
+        const float inversePdf = InverseRectanglePdf(light,distanceSquared,direction);
+        if (!(inversePdf > 0) || !isfinite(inversePdf)) return {};
+        const float weight = PowerWeight(sample.Pdf*inversePdf,1.0f);
+        const Vector3 unoccluded = {sample.Weight.X*light.Emission[0]*weight,
+            sample.Weight.Y*light.Emission[1]*weight,sample.Weight.Z*light.Emission[2]*weight};
+        if (unoccluded.X == 0 && unoccluded.Y == 0 && unoccluded.Z == 0) return {};
+        const Vector3 target = {position.X+step.X,position.Y+step.Y,position.Z+step.Z};
+        return {unoccluded,LightVisible(light.Kind,position,ng,direction,target)};
+    }
+
+    __device__ __forceinline__ void Accumulate(IndirectLighting &output, Vector3 contribution, Vector3 weight)
+    {
+        output.R += contribution.X*weight.X;
+        output.G += contribution.Y*weight.Y;
+        output.B += contribution.Z*weight.Z;
+    }
+
+    __device__ __forceinline__ void AccumulateDirect(IndirectLighting &direct, IndirectLighting &unshadowed,
+        const LightContribution &value, float scale)
+    {
+        const Vector3 weight = {scale,scale,scale};
+        Accumulate(unshadowed,value.Unoccluded,weight);
+        if (value.Visible) Accumulate(direct,value.Unoccluded,weight);
     }
 
     __device__ __forceinline__ void EvaluateAdditionalDirect(unsigned int pixel, const SurfaceInput &surface)
@@ -107,8 +191,9 @@ namespace HybridIndirect
             const Vector3 position = {surface.Position.X,surface.Position.Y,surface.Position.Z};
             const Vector3 normal = {surface.NormalX,surface.NormalY,surface.NormalZ};
             const Vector3 albedo = {surface.AlbedoR,surface.AlbedoG,surface.AlbedoB};
+            const auto wo = Normalize({params.Indirect.CameraX-position.X,
+                params.Indirect.CameraY-position.Y,params.Indirect.CameraZ-position.Z});
             // The first raster hit can see the front side of an emissive rectangle.
-            // Secondary diffuse paths use light sampling to account for this emission once.
             const auto emitter = static_cast<unsigned int>(roundf((1.0f-surface.AlbedoA)*255.0f));
             if (emitter && emitter <= params.AdditionalLightCount)
             {
@@ -117,18 +202,17 @@ namespace HybridIndirect
             }
             for (unsigned int light = 0; light < params.AdditionalLightCount; ++light)
             {
-                const auto samples = params.AdditionalLights[light].Kind == TraceLightKind::Rectangle
-                    ? params.Indirect.SamplesPerPixel : 1u;
+                const auto &source = params.AdditionalLights[light];
+                const bool rectangle = source.Kind == TraceLightKind::Rectangle;
+                const auto samples = rectangle ? params.Indirect.SamplesPerPixel : 1u;
                 const float scale = 1.0f/samples;
                 for (unsigned int sample = 0; sample < samples; ++sample)
                 {
-                    const auto value = SampleLight(pixel,sample,0,light,position,normal,normal,albedo);
-                    const auto contribution = Scale(value.Unoccluded,scale);
-                    unshadowed.R += contribution.X; unshadowed.G += contribution.Y; unshadowed.B += contribution.Z;
-                    if (value.Visible)
-                    {
-                        direct.R += contribution.X; direct.G += contribution.Y; direct.B += contribution.Z;
-                    }
+                    const auto value = SampleLight(pixel,sample,0,light,position,normal,normal,wo,albedo);
+                    AccumulateDirect(direct,unshadowed,value,scale);
+                    if (rectangle)
+                        AccumulateDirect(direct,unshadowed,ConnectBsdfToRectangle(source,position,normal,
+                            SampleVertex(pixel,sample,0,albedo,normal,wo)),scale);
                 }
             }
         }
@@ -160,9 +244,7 @@ namespace HybridIndirect
                 Vector3 throughput = {1,1,1};
                 for (unsigned int bounce = 0; bounce < params.Indirect.MaxBounces; ++bounce)
                 {
-                    // Reserve disjoint random counters per bounce, preserving bounce zero's samples.
-                    const auto counter = sampleIndex+bounce*MaxIndirectSamples;
-                    const auto sample = SampleDiffuse(rho,ns,wo,Uniform(i,counter,0),Uniform(i,counter,1));
+                    const auto sample = SampleVertex(i,sampleIndex,bounce,rho,ns,wo);
                     if (!sample.Valid) break;
                     const auto d = sample.Direction;
                     if (bounce && Dot(ng,d) <= 0) break;
@@ -212,11 +294,15 @@ namespace HybridIndirect
                     {
                         for (unsigned int lightIndex = 0; lightIndex < params.AdditionalLightCount; ++lightIndex)
                         {
-                            const auto extra = SampleLight(i,sampleIndex,bounce+1,lightIndex,position,ng,ns,rho);
-                            if (!extra.Visible) continue;
-                            result.R += throughput.X*extra.Unoccluded.X;
-                            result.G += throughput.Y*extra.Unoccluded.Y;
-                            result.B += throughput.Z*extra.Unoccluded.Z;
+                            const auto extra = SampleLight(i,sampleIndex,bounce+1,lightIndex,position,ng,ns,wo,rho);
+                            if (extra.Visible) Accumulate(result,extra.Unoccluded,throughput);
+                            const auto &source = params.AdditionalLights[lightIndex];
+                            if (source.Kind == TraceLightKind::Rectangle)
+                            {
+                                const auto bsdfHit = ConnectBsdfToRectangle(source,position,ng,
+                                    SampleVertex(i,sampleIndex,bounce+1,rho,ns,wo));
+                                if (bsdfHit.Visible) Accumulate(result,bsdfHit.Unoccluded,throughput);
+                            }
                         }
                     }
                     if (throughput.X == 0 && throughput.Y == 0 && throughput.Z == 0) break;
