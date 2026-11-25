@@ -107,6 +107,14 @@ namespace HybridIndirect
             const Vector3 position = {surface.Position.X,surface.Position.Y,surface.Position.Z};
             const Vector3 normal = {surface.NormalX,surface.NormalY,surface.NormalZ};
             const Vector3 albedo = {surface.AlbedoR,surface.AlbedoG,surface.AlbedoB};
+            // The first raster hit can see the front side of an emissive rectangle.
+            // Secondary diffuse paths use light sampling to account for this emission once.
+            const auto emitter = static_cast<unsigned int>(roundf((1.0f-surface.AlbedoA)*255.0f));
+            if (emitter && emitter <= params.AdditionalLightCount)
+            {
+                const auto &radiance = params.AdditionalLights[emitter-1].Emission;
+                direct = unshadowed = {radiance[0],radiance[1],radiance[2],1};
+            }
             for (unsigned int light = 0; light < params.AdditionalLightCount; ++light)
             {
                 const auto samples = params.AdditionalLights[light].Kind == TraceLightKind::Rectangle
@@ -174,9 +182,10 @@ namespace HybridIndirect
                         0.0f,OptixVisibilityMask(255),OPTIX_RAY_FLAG_DISABLE_ANYHIT,0,1,0,blocker,distance);
                     const SurfaceHit hit = params.QueryHits[i];
                     if (record) debug.Hit = hit;
-                    if (!hit.Valid || !hit.FrontFace) break;
+                    if (!hit.Valid || (!hit.FrontFace && !hit.TwoSided)) break;
                     position = {hit.PositionX,hit.PositionY,hit.PositionZ};
                     ng = {hit.GeometricNormalX,hit.GeometricNormalY,hit.GeometricNormalZ};
+                    if (!hit.FrontFace) ng = Scale(ng,-1);
                     ns = {hit.ShadingNormalX,hit.ShadingNormalY,hit.ShadingNormalZ};
                     if (Dot(ns,ng) < 0) ns = Scale(ns,-1);
                     wo = Scale(d,-1);

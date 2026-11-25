@@ -107,7 +107,8 @@ PSInput VSMain(VSInput input)
 }
 
 PSOutput PSMain(
-    PSInput input)
+    PSInput input,
+    bool frontFace : SV_IsFrontFace)
 {
     PSOutput output;
 
@@ -115,6 +116,7 @@ PSOutput PSMain(
         normalize(
             input.NormalW
         );
+    if (!frontFace) normal = -normal;
 
     float3 lightDirection =
         normalize(
@@ -163,7 +165,7 @@ PSOutput PSMain(
     //
 
     output.Albedo =
-        gAlbedo;
+        float4(gAlbedo.rgb,frontFace ? gAlbedo.a : 1.0f);
 
     //
     // RT2

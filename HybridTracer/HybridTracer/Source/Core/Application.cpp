@@ -40,13 +40,19 @@ int Application::Run(bool smokeTest, bool profile, bool accumulation, unsigned i
 {
     const auto path = sceneFile.empty() ? DefaultSceneFile() : sceneFile;
     const auto description = ReadSceneFile(path);
+    const UINT width = description.Camera ? description.Camera->Width : WindowWidth;
+    const UINT height = description.Camera ? description.Camera->Height : WindowHeight;
+    const float aspect = float(width)/height;
+    const float fovY = description.Camera ? description.Camera->VerticalFov(aspect) : XM_PIDIV4;
+    const float nearClip = description.Camera ? description.Camera->Near : 0.1f;
+    const float farClip = description.Camera ? description.Camera->Far : 100.0f;
 #ifndef HYBRIDTRACER_HAS_HYBRID_RENDERER
     if (description.Lights.size() > 1 ||
         (!description.Lights.empty() && !std::holds_alternative<DirectionalLight>(description.Lights.front())))
         throw std::runtime_error("This scene requires HYBRIDTRACER_ENABLE_HYBRID_RENDERER=ON.");
 #endif
     std::cout << "Scene: " << path.u8string() << " (" << description.Objects.size() << " objects, "
-        << description.Lights.size() << " lights)\n";
+        << description.Lights.size() << " lights, " << width << 'x' << height << ")\n";
     HINSTANCE instance = GetModuleHandleW(nullptr);
     WNDCLASSW windowClass = {};
     windowClass.lpfnWndProc = Application::WindowProc;
@@ -54,20 +60,33 @@ int Application::Run(bool smokeTest, bool profile, bool accumulation, unsigned i
     windowClass.lpszClassName = WindowClassName;
     windowClass.hCursor = LoadCursor(nullptr,IDC_ARROW);
     RegisterClassW(&windowClass);
-    RECT rect = {0,0,LONG(WindowWidth),LONG(WindowHeight)};
+    RECT rect = {0,0,LONG(width),LONG(height)};
     AdjustWindowRect(&rect,WS_OVERLAPPEDWINDOW,FALSE);
     mHwnd = CreateWindowExW(0,WindowClassName,L"HybridTracer",WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT,CW_USEDEFAULT,rect.right-rect.left,rect.bottom-rect.top,
         nullptr,nullptr,instance,this);
     if (!mHwnd) throw std::runtime_error("Failed to create application window.");
-    mDX12.Initialize(mHwnd,WindowWidth,WindowHeight);
+    mDX12.Initialize(mHwnd,width,height);
     description.Apply(mScene,mDX12.GetDevice());
-    mCamera.SetLens(XM_PIDIV4,float(WindowWidth)/WindowHeight,0.1f,100.0f);
-    UpdateCamera();
+    if (description.Camera)
+    {
+        const auto &camera = *description.Camera;
+        camera.Apply(mCamera,width,height);
+        mOrbitTarget = {camera.Position.x+camera.Forward.x*mRadius,
+            camera.Position.y+camera.Forward.y*mRadius,camera.Position.z+camera.Forward.z*mRadius};
+        mCameraUp = camera.Up;
+        mTheta = std::atan2(-camera.Forward.z,-camera.Forward.x);
+        mPhi = std::acos(std::clamp(-camera.Forward.y,-1.0f,1.0f));
+    }
+    else
+    {
+        mCamera.SetLens(fovY,aspect,nearClip,farClip);
+        UpdateCamera();
+    }
 #ifdef HYBRIDTRACER_HAS_HYBRID_RENDERER
     mHybrid = std::make_unique<HybridFramePipeline>();
     mHybrid->Initialize(mDX12.GetDevice(),mDX12.GetCommandQueue(),mDX12.GetBackBufferFormat(),
-        WindowWidth,WindowHeight,FrameCount,mScene,profile,accumulation);
+        width,height,FrameCount,mScene,profile,accumulation);
     std::optional<FrameTiming> latestTiming;
     std::unique_ptr<FrameTimingLog> timingLog;
     if (profile) timingLog=std::make_unique<FrameTimingLog>(L"HybridTracerTimings.csv");
@@ -76,7 +95,7 @@ int Application::Run(bool smokeTest, bool profile, bool accumulation, unsigned i
         L"HybridTracer | 6: Primary direct unshadowed + indirect",
         L"HybridTracer | 7: Direct only",L"HybridTracer | 8: Indirect only"};
 #else
-    mRasterPass.Initialize(mDX12.GetDevice(),mDX12.GetBackBufferFormat(),WindowWidth,WindowHeight,FrameCount);
+    mRasterPass.Initialize(mDX12.GetDevice(),mDX12.GetBackBufferFormat(),width,height,FrameCount);
     mDebugPass.Initialize(mDX12.GetDevice(),mDX12.GetBackBufferFormat(),mRasterPass.GetAlbedoBuffer(),
         mRasterPass.GetNormalBuffer(),mRasterPass.GetRasterDepthBuffer());
     const wchar_t *titles[] = {L"HybridTracer | 1: Shaded",L"HybridTracer | 2: Albedo",
@@ -97,13 +116,13 @@ int Application::Run(bool smokeTest, bool profile, bool accumulation, unsigned i
         if (smokeTest)
         {
             mDebugMode = rendered % static_cast<UINT>(std::size(titles));
-            if (rendered==4) mTheta+=0.05f;
+            if (rendered==4) { mTheta+=0.05f; mCameraMoved=true; }
 #ifdef HYBRIDTRACER_HAS_HYBRID_RENDERER
             if (rendered==6) mHybrid->SetAccumulationEnabled(false);
             if (rendered==7) mHybrid->SetAccumulationEnabled(true);
             if (rendered==9) mHybrid->ResetAccumulation();
 #endif
-            if (rendered==10) mCamera.SetLens(XM_PIDIV4,float(WindowWidth)/WindowHeight,0.2f,100);
+            if (rendered==10) mCamera.SetLens(fovY,aspect,nearClip+(std::min)(nearClip,(farClip-nearClip)/2),farClip);
         }
         else if (GetForegroundWindow() == mHwnd)
         {
@@ -123,7 +142,7 @@ int Application::Run(bool smokeTest, bool profile, bool accumulation, unsigned i
 #ifdef HYBRIDTRACER_HAS_HYBRID_RENDERER
         const auto cpuBegin=profile ? ProfileClock::now() : ProfileClock::time_point{};
 #endif
-        UpdateCamera();
+        if (!description.Camera || mCameraMoved) UpdateCamera();
         auto *list = mDX12.BeginFrame();
         const auto output = mDX12.GetCurrentRTV();
         const UINT index = mDX12.GetCurrentFrameIndex();
@@ -225,9 +244,10 @@ void Application::UpdateCamera()
         std::sin(mTheta);
 
     mCamera.LookAt(
-        XMFLOAT3(x, y, z),
-        XMFLOAT3(0.0f, 0.0f, 0.0f),
-        XMFLOAT3(0.0f, 1.0f, 0.0f));
+        XMFLOAT3(mOrbitTarget.x+x,mOrbitTarget.y+y,mOrbitTarget.z+z),
+        mOrbitTarget,
+        mCameraUp);
+    mCameraMoved = false;
 }
 
 //
@@ -344,6 +364,7 @@ LRESULT CALLBACK Application::WindowProc(
 
             app->mTheta += dx * 0.01f;
             app->mPhi += dy * 0.01f;
+            app->mCameraMoved = true;
 
             app->mPhi = std::clamp(
                 app->mPhi,
@@ -370,6 +391,7 @@ LRESULT CALLBACK Application::WindowProc(
                 GET_WHEEL_DELTA_WPARAM(wParam)) /
             static_cast<float>(WHEEL_DELTA);
 
+        app->mCameraMoved = true;
         app->mRadius -=
             wheelDelta * 0.5f;
 

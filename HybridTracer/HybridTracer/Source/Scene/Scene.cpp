@@ -206,6 +206,8 @@ void Scene::Initialize(ID3D12Device *device, const std::vector<SceneObjectDescri
     {
         auto material = std::make_unique<Material>();
         material->Albedo = description.Albedo;
+        material->TwoSided = description.TwoSided;
+        material->EmitterLight = description.EmitterLight;
         Transform transform;
         const auto &position = description.Position;
         const auto &rotation = description.Rotation;
@@ -213,6 +215,7 @@ void Scene::Initialize(ID3D12Device *device, const std::vector<SceneObjectDescri
         transform.SetPosition(position.x,position.y,position.z);
         transform.SetRotation(rotation.x,rotation.y,rotation.z);
         transform.SetScale(scale.x,scale.y,scale.z);
+        if (description.World) transform.SetWorldMatrix(*description.World);
         mObjects.push_back({description.Shape == SceneShape::Cube ? cube : plane,material.get(),transform});
         mMaterials.push_back(std::move(material));
     }

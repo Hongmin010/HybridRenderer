@@ -287,7 +287,8 @@ void OptixTracePass::Initialize(CUcontext context, CUstream stream, const OptixS
         const auto &geometry = gas.GetGeometry()[i];
         hits[i].Data = {reinterpret_cast<const GasVertex *>(geometry.Vertices),
             reinterpret_cast<const GasTriangle *>(geometry.Indices),reinterpret_cast<const GasNormal *>(geometry.Normals),
-            geometry.ObjectIndex,geometry.TriangleCount,geometry.AlbedoR,geometry.AlbedoG,geometry.AlbedoB,0};
+            geometry.ObjectIndex,geometry.TriangleCount,geometry.AlbedoR,geometry.AlbedoG,geometry.AlbedoB,
+            geometry.TwoSided ? 1u : 0u};
     }
     UploadRecords(mSbt.hitgroupRecordBase, hits.data(), hits.size());
     mSbt.hitgroupRecordStrideInBytes = sizeof(HitRecord);

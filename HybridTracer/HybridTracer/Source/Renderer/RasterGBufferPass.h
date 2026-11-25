@@ -102,6 +102,8 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12PipelineState>
         mPipelineState;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState>
+        mTwoSidedPipelineState;
 
     //
     // Depth test용

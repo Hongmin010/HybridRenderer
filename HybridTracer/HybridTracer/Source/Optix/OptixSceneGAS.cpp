@@ -172,6 +172,7 @@ void OptixSceneGAS::Build(const Scene &scene)
         geometry.VertexCount = static_cast<unsigned int>(vertices.size());
         geometry.TriangleCount = static_cast<unsigned int>(triangles.size());
         geometry.AlbedoR = albedo.x; geometry.AlbedoG = albedo.y; geometry.AlbedoB = albedo.z;
+        geometry.TwoSided = object.MaterialData->TwoSided;
         const size_t vertexBytes = vertices.size()*sizeof(GasVertex);
         const size_t indexBytes = triangles.size()*sizeof(GasTriangle);
         CheckCuda(cuMemAlloc(&geometry.Vertices, vertexBytes), "cuMemAlloc(GAS vertices)");

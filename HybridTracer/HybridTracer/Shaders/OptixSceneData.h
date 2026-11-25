@@ -10,7 +10,8 @@ struct SceneHitData
     const GasTriangle *Indices;
     const GasNormal *Normals;
     unsigned int ObjectIndex, TriangleCount;
-    float AlbedoR,AlbedoG,AlbedoB,Padding;
+    float AlbedoR,AlbedoG,AlbedoB;
+    unsigned int TwoSided;
 };
 static_assert(sizeof(GasVertex) == 16, "GasVertex ABI");
 static_assert(sizeof(GasTriangle) == 12, "GasTriangle ABI");

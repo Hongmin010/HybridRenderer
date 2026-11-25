@@ -76,6 +76,11 @@ add_custom_target(HybridTracerSceneAssets
         "${CMAKE_CURRENT_SOURCE_DIR}/Scenes/Default.xml"
         "${CMAKE_CURRENT_SOURCE_DIR}/Scenes/Studio.xml"
         "$<TARGET_FILE_DIR:HybridTracer>/Scenes"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:HybridTracer>/Scenes/CornellBox"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/Scenes/CornellBox/scene_v3.xml"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Scenes/CornellBox/LICENSE.txt"
+        "$<TARGET_FILE_DIR:HybridTracer>/Scenes/CornellBox"
     VERBATIM)
 add_dependencies(HybridTracer HybridTracerSceneAssets)
 

@@ -224,6 +224,8 @@ namespace
             WriteMatrix(out,object.ObjectTransform.GetWorldMatrix());
             out << ", \"reflectance\":";
             WriteVector(out,object.MaterialData->Albedo);
+            if (object.MaterialData->TwoSided) out << ", \"two_sided\":true";
+            if (object.MaterialData->EmitterLight) out << ", \"emitter_light\":" << object.MaterialData->EmitterLight;
             const auto &vertices = object.MeshData->GetVertices();
             const auto writeAttribute = [&](const char *name, XMFLOAT3 Vertex::*attribute)
             {
@@ -363,7 +365,7 @@ namespace
             if (message->Severity <= D3D12_MESSAGE_SEVERITY_WARNING) throw std::runtime_error(message->pDescription);
         }
     }
-    void Run(UINT width, UINT height, bool captures, bool profile, bool linearComparison, UINT maxIndirectBounces,
+    void Run(bool fullResolution, bool captures, bool profile, bool linearComparison, UINT maxIndirectBounces,
         const std::filesystem::path &sceneFile)
     {
         DX12Context dx;
@@ -371,8 +373,16 @@ namespace
         auto *device = dx.GetDevice();
         auto *queue = dx.GetCommandQueue();
         Scene scene;
+        std::optional<SceneCamera> sceneCamera;
         if (sceneFile.empty()) scene.Initialize(device);
-        else ReadSceneFile(sceneFile).Apply(scene,device);
+        else
+        {
+            const auto description = ReadSceneFile(sceneFile);
+            description.Apply(scene,device);
+            sceneCamera = description.Camera;
+        }
+        const UINT width = sceneCamera ? sceneCamera->Width : fullResolution ? 1280 : 321;
+        const UINT height = sceneCamera ? sceneCamera->Height : fullResolution ? 720 : 181;
         const bool additional = !scene.GetAdditionalLights().empty();
         HybridFramePipeline pipeline;
         pipeline.Initialize(device,queue,DXGI_FORMAT_R8G8B8A8_UNORM,width,height,2,scene,profile,additional && !linearComparison);
@@ -428,18 +438,23 @@ namespace
             HybridView::Normal,HybridView::Depth,HybridView::Lit,HybridView::Lit,HybridView::Direct,HybridView::Indirect};
         constexpr UINT seed = 12345;
         const UINT spp = captures || linearComparison ? 32u : 4u;
-        const bool checkFixture = !linearComparison || captures;
+        const bool captureAndDebugViews = !linearComparison || captures;
+        const bool checkFixture = captureAndDebugViews && !sceneCamera;
         const UINT frameCount = static_cast<UINT>(std::size(views));
-        for (UINT frame = checkFixture ? 0 : frameCount-1; frame < frameCount; ++frame)
+        for (UINT frame = captureAndDebugViews ? 0 : frameCount-1; frame < frameCount; ++frame)
         {
-            const bool alternate = frame >= 3 && frame <= 7 && frame%2;
-            camera.SetLens(XM_PIDIV4,float(width)/height,alternate ? 0.25f : 0.1f,alternate ? 40.0f : 100.0f);
-            camera.LookAt({alternate ? 0.45f : -0.45f,2.6f,-7.0f},{0,0,0.5f},{0,1,0});
+            const bool alternate = !sceneCamera && frame >= 3 && frame <= 7 && frame%2;
+            if (sceneCamera) sceneCamera->Apply(camera,width,height);
+            else
+            {
+                camera.SetLens(XM_PIDIV4,float(width)/height,alternate ? 0.25f : 0.1f,alternate ? 40.0f : 100.0f);
+                camera.LookAt({alternate ? 0.45f : -0.45f,2.6f,-7.0f},{0,0,0.5f},{0,1,0});
+            }
             auto light = scene.GetDirectionalLight();
             if (alternate) light.Direction = {0.7f,1.0f,0.2f};
-            if (frame == 6) { light.Intensity = 4*XM_PI; light.Color = {1.2f,0.5f,0.3f}; }
-            if (frame == 7) { light.Intensity = 0.001f; }
-            const float exposure = frame == 6 ? 0.35f : frame == 7 ? 2.0f : 1.0f;
+            if (!sceneCamera && frame == 6) { light.Intensity = 4*XM_PI; light.Color = {1.2f,0.5f,0.3f}; }
+            if (!sceneCamera && frame == 7) { light.Intensity = 0.001f; }
+            const float exposure = sceneCamera ? 1.0f : frame == 6 ? 0.35f : frame == 7 ? 2.0f : 1.0f;
             for (size_t i = 0; i < lists.size(); ++i)
             {
                 CheckHR(allocators[i]->Reset(),"Reset(allocator)");
@@ -495,7 +510,7 @@ namespace
             indirectReadback->Unmap(0,&none);
             if (std::memcmp(dxIndirect.data(),cudaIndirect.data(),indirectBytes) != 0)
                 throw std::runtime_error("CUDA->DX12 indirect bytes differ.");
-            ValidateShadowResults(dxShadow.data(),surfaces.data(),scene,pipeline.GetShadowSettings(),width,height,frame,nullptr);
+            ValidateShadowResults(dxShadow.data(),surfaces.data(),scene,pipeline.GetShadowSettings(),width,height,frame,nullptr,!sceneCamera);
             const auto albedo = readbacks[0].Read<uint8_t>();
             const auto normal = readbacks[1].Read<uint16_t>();
             const auto depth = readbacks[2].Read<float>();
@@ -540,6 +555,7 @@ namespace
         if (!checkFixture)
         {
             pipeline.ValidateGAS(scene);
+            CheckMessages(device);
             return;
         }
         size_t changed = 0;
@@ -589,7 +605,7 @@ int wmain(int argc, wchar_t **argv)
         ComPtr<ID3D12Debug> debug;
         CheckHR(D3D12GetDebugInterface(IID_PPV_ARGS(&debug)),"D3D12GetDebugInterface");
         debug->EnableDebugLayer();
-        Run(full ? 1280 : 321,full ? 720 : 181,captures,profile,linearComparison,maxIndirectBounces,sceneFile);
+        Run(full,captures,profile,linearComparison,maxIndirectBounces,sceneFile);
         return 0;
     }
     catch (const std::exception &error)

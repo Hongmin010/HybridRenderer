@@ -13,7 +13,8 @@ namespace
 {
     struct Options
     {
-        UINT Width=1280,Height=720,Frames=120,Warmup=30,Spp=4;
+        std::optional<UINT> Width,Height;
+        UINT Frames=120,Warmup=30,Spp=4;
         UINT MaxIndirectBounces=DefaultIndirectBounces;
         std::filesystem::path SceneFile;
         bool Check=false,Moving=false,Profile=true,Accumulation=true;
@@ -51,7 +52,8 @@ namespace
             else if (flag==L"--csv") o.Csv=argv[i];
             else throw std::runtime_error("Unknown benchmark flag.");
         }
-        if (!o.Width || !o.Height || !o.Frames || !o.Spp) throw std::runtime_error("Dimensions, frames and spp must be positive.");
+        if (o.Width == 0u || o.Height == 0u || !o.Frames || !o.Spp)
+            throw std::runtime_error("Dimensions, frames and spp must be positive.");
         return o;
     }
     void CheckMessages(ID3D12Device *device)
@@ -70,15 +72,17 @@ namespace
     {
         const auto scenePath = o.SceneFile.empty() ? DefaultSceneFile() : o.SceneFile;
         const auto description = ReadSceneFile(scenePath);
+        const UINT width = o.Width.value_or(description.Camera ? description.Camera->Width : 1280);
+        const UINT height = o.Height.value_or(description.Camera ? description.Camera->Height : 720);
         std::cout << "Scene: " << scenePath.u8string() << " (" << description.Objects.size() << " objects, "
             << description.Lights.size() << " lights)\n";
         DX12Context dx; dx.InitializeHeadless(); auto *device=dx.GetDevice(); auto *queue=dx.GetCommandQueue();
         Scene scene;
         description.Apply(scene,device);
         HybridFramePipeline pipeline;
-        pipeline.Initialize(device,queue,DXGI_FORMAT_R8G8B8A8_UNORM,o.Width,o.Height,2,scene,o.Profile,o.Accumulation);
+        pipeline.Initialize(device,queue,DXGI_FORMAT_R8G8B8A8_UNORM,width,height,2,scene,o.Profile,o.Accumulation);
         D3D12_HEAP_PROPERTIES heap={}; heap.Type=D3D12_HEAP_TYPE_DEFAULT; heap.CreationNodeMask=heap.VisibleNodeMask=1;
-        D3D12_RESOURCE_DESC desc={}; desc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D; desc.Width=o.Width; desc.Height=o.Height;
+        D3D12_RESOURCE_DESC desc={}; desc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D; desc.Width=width; desc.Height=height;
         desc.DepthOrArraySize=desc.MipLevels=1; desc.SampleDesc.Count=1; desc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;
         desc.Flags=D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
         D3D12_CLEAR_VALUE clear={}; clear.Format=desc.Format;
@@ -98,7 +102,8 @@ namespace
             CheckHR(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,allocators[i].Get(),nullptr,IID_PPV_ARGS(&lists[i])),"CreateCommandList(benchmark)");
             CheckHR(lists[i]->Close(),"Close(initial benchmark)");
         }
-        Camera camera; camera.SetLens(XM_PIDIV4,float(o.Width)/o.Height,0.1f,100);
+        Camera camera;
+        if (!description.Camera) camera.SetLens(XM_PIDIV4,float(width)/height,0.1f,100);
         std::unique_ptr<FrameTimingLog> log;
         if (o.Profile) log=std::make_unique<FrameTimingLog>(o.Csv);
         CUdevice cudaDevice; CheckCuda(cuCtxGetDevice(&cudaDevice),"cuCtxGetDevice(benchmark)");
@@ -118,7 +123,9 @@ namespace
         for (UINT frame=0;frame<o.Warmup+o.Frames;++frame)
         {
             if (frame==o.Warmup) measuredBegin=ProfileClock::now();
-            camera.LookAt({-0.45f+(o.Moving ? 0.3f*std::sin(frame*0.025f):0),2.6f,-7},{0,0,0.5f},{0,1,0});
+            const float xOffset = o.Moving ? 0.3f*std::sin(frame*0.025f):0;
+            if (description.Camera) description.Camera->Apply(camera,width,height,xOffset);
+            else camera.LookAt({-0.45f+xOffset,2.6f,-7},{0,0,0.5f},{0,1,0});
             const auto begin=ProfileClock::now();
             for (size_t i=0;i<2;++i)
             {

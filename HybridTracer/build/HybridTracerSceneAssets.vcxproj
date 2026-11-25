@@ -112,6 +112,10 @@
 if %errorlevel% neq 0 goto :cmEnd
 "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different C:/GitHub/HybridRenderer/HybridTracer/Scenes/Default.xml C:/GitHub/HybridRenderer/HybridTracer/Scenes/Studio.xml C:/GitHub/HybridRenderer/HybridTracer/build/Debug/Scenes
 if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E make_directory C:/GitHub/HybridRenderer/HybridTracer/build/Debug/Scenes/CornellBox
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different C:/GitHub/HybridRenderer/HybridTracer/Scenes/CornellBox/scene_v3.xml C:/GitHub/HybridRenderer/HybridTracer/Scenes/CornellBox/LICENSE.txt C:/GitHub/HybridRenderer/HybridTracer/build/Debug/Scenes/CornellBox
+if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
 :cmErrorLevel
@@ -127,6 +131,10 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
 "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E make_directory C:/GitHub/HybridRenderer/HybridTracer/build/Release/Scenes
 if %errorlevel% neq 0 goto :cmEnd
 "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different C:/GitHub/HybridRenderer/HybridTracer/Scenes/Default.xml C:/GitHub/HybridRenderer/HybridTracer/Scenes/Studio.xml C:/GitHub/HybridRenderer/HybridTracer/build/Release/Scenes
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E make_directory C:/GitHub/HybridRenderer/HybridTracer/build/Release/Scenes/CornellBox
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different C:/GitHub/HybridRenderer/HybridTracer/Scenes/CornellBox/scene_v3.xml C:/GitHub/HybridRenderer/HybridTracer/Scenes/CornellBox/LICENSE.txt C:/GitHub/HybridRenderer/HybridTracer/build/Release/Scenes/CornellBox
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
@@ -144,6 +152,10 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
 if %errorlevel% neq 0 goto :cmEnd
 "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different C:/GitHub/HybridRenderer/HybridTracer/Scenes/Default.xml C:/GitHub/HybridRenderer/HybridTracer/Scenes/Studio.xml C:/GitHub/HybridRenderer/HybridTracer/build/MinSizeRel/Scenes
 if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E make_directory C:/GitHub/HybridRenderer/HybridTracer/build/MinSizeRel/Scenes/CornellBox
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different C:/GitHub/HybridRenderer/HybridTracer/Scenes/CornellBox/scene_v3.xml C:/GitHub/HybridRenderer/HybridTracer/Scenes/CornellBox/LICENSE.txt C:/GitHub/HybridRenderer/HybridTracer/build/MinSizeRel/Scenes/CornellBox
+if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone
 :cmErrorLevel
@@ -159,6 +171,10 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
 "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E make_directory C:/GitHub/HybridRenderer/HybridTracer/build/RelWithDebInfo/Scenes
 if %errorlevel% neq 0 goto :cmEnd
 "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different C:/GitHub/HybridRenderer/HybridTracer/Scenes/Default.xml C:/GitHub/HybridRenderer/HybridTracer/Scenes/Studio.xml C:/GitHub/HybridRenderer/HybridTracer/build/RelWithDebInfo/Scenes
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E make_directory C:/GitHub/HybridRenderer/HybridTracer/build/RelWithDebInfo/Scenes/CornellBox
+if %errorlevel% neq 0 goto :cmEnd
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E copy_if_different C:/GitHub/HybridRenderer/HybridTracer/Scenes/CornellBox/scene_v3.xml C:/GitHub/HybridRenderer/HybridTracer/Scenes/CornellBox/LICENSE.txt C:/GitHub/HybridRenderer/HybridTracer/build/RelWithDebInfo/Scenes/CornellBox
 if %errorlevel% neq 0 goto :cmEnd
 :cmEnd
 endlocal &amp; call :cmErrorLevel %errorlevel% &amp; goto :cmDone

@@ -540,6 +540,8 @@ void RasterGBufferPass::CreatePipeline(
             &psoDesc,
             IID_PPV_ARGS(
                 &mPipelineState)));
+    psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    CheckHR(device->CreateGraphicsPipelineState(&psoDesc,IID_PPV_ARGS(&mTwoSidedPipelineState)));
 }
 
 void RasterGBufferPass::CreateDepthBuffer(
@@ -1095,8 +1097,8 @@ void RasterGBufferPass::Render(
     commandList->SetGraphicsRootSignature(
         mRootSignature.Get());
 
-    commandList->SetPipelineState(
-        mPipelineState.Get());
+    auto *activePipeline = mPipelineState.Get();
+    commandList->SetPipelineState(activePipeline);
 
     commandList->IASetPrimitiveTopology(
         D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1177,6 +1179,13 @@ void RasterGBufferPass::Render(
         {
             continue;
         }
+        auto *pipeline = object.MaterialData && object.MaterialData->TwoSided ?
+            mTwoSidedPipelineState.Get() : mPipelineState.Get();
+        if (pipeline != activePipeline)
+        {
+            commandList->SetPipelineState(pipeline);
+            activePipeline = pipeline;
+        }
 
         //
         // Transform
@@ -1229,7 +1238,7 @@ void RasterGBufferPass::Render(
                     albedo.x,
                     albedo.y,
                     albedo.z,
-                    1.0f};
+                    (255.0f-static_cast<float>(object.MaterialData->EmitterLight))/255.0f};
         }
         else
         {

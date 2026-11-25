@@ -47,6 +47,7 @@ namespace HybridSurface
         hit.BarycentricU = bary.x; hit.BarycentricV = bary.y;
         hit.AlbedoR = data.AlbedoR; hit.AlbedoG = data.AlbedoG; hit.AlbedoB = data.AlbedoB;
         hit.ObjectIndex = data.ObjectIndex; hit.PrimitiveIndex = primitive;
+        hit.TwoSided = data.TwoSided;
         hit.Valid = 1; hit.FrontFace = optixIsFrontFaceHit() ? 1u : 0u;
         return hit;
     }

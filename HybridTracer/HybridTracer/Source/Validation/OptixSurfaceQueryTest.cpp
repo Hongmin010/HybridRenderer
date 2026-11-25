@@ -232,7 +232,7 @@ namespace
                 hit.BarycentricU+hit.BarycentricV>1.000001f) Fail(batch,index,"Barycentric attribute mismatch.");
             if (albedoError>0.0000001) Fail(batch,index,"SBT full-precision material color mismatch.");
             const unsigned int expectedFront=Dot(ng,direction)<0 ? 1u:0u;
-            if (hit.FrontFace!=expectedFront || hit.Padding!=0) Fail(batch,index,"Native triangle front/back flag mismatch.");
+            if (hit.FrontFace!=expectedFront || hit.TwoSided!=0) Fail(batch,index,"Native triangle front/back flag mismatch.");
             ++hitCount; ++covered[reported]; if (hit.FrontFace) ++frontCount; else ++backCount;
             if (triangle.Object==4 && Dot(ng,ns)<0.999) ++smoothCount;
             if (triangle.Object==5 && Dot(ng,ns)<0) ++mirroredCount;

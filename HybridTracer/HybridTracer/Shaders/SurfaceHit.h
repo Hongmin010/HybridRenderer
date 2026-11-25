@@ -16,7 +16,7 @@ struct SurfaceHit
     float ShadingNormalX,ShadingNormalY,ShadingNormalZ,BarycentricV;
     float AlbedoR,AlbedoG,AlbedoB;
     unsigned int ObjectIndex;
-    unsigned int PrimitiveIndex,Valid,FrontFace,Padding;
+    unsigned int PrimitiveIndex,Valid,FrontFace,TwoSided;
 };
 static_assert(sizeof(SurfaceRay) == 48, "SurfaceRay ABI");
 static_assert(sizeof(SurfaceHit) == 80, "SurfaceHit ABI");

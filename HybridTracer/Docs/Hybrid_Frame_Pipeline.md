@@ -72,6 +72,18 @@ Raster의 임시 RT0는 hybrid 최종 합성에서 읽지 않는다.
 - 방향광 한 개를 제외한 나머지 광원은 최대 16개다. 점광원과 면광원의 그림자 광선은
   광원 위치까지 추적한다. 사각형은 `half_u × half_v` 방향으로 발광하는 가상 발광판이다.
 
+### Bitterli Cornell Box
+
+```powershell
+.\build\Release\HybridTracer.exe --scene .\Scenes\CornellBox\scene_v3.xml --bounces 1
+```
+
+앱, 벤치마크, HDR 캡처 도구에서 같은 Mitsuba 3 XML을 열 수 있다. 현재 읽는 항목은
+원근 카메라의 FOV와 필름 크기, 큐브와 사각형의 `to_world` 행렬, RGB 확산·양면
+확산 재질, 사각형에 붙은 면광원이다. Cornell Box는 1024×1024 카메라에서 열리고,
+천장 발광판이 카메라에 보이며 색 벽과 상자를 비춘다. 채택한 샘플 수와 반사 횟수는
+HybridTracer 실행 설정을 따른다. 원본 XML 옆에 배포본 라이선스를 함께 보관한다.
+
 ## API 간 동기화와 수명
 
 ```text

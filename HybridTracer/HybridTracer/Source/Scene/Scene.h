@@ -25,6 +25,9 @@ struct SceneObjectDescription
     DirectX::XMFLOAT3 Rotation = {0, 0, 0};
     DirectX::XMFLOAT3 Scale = {1, 1, 1};
     DirectX::XMFLOAT3 Albedo = {1, 1, 1};
+    std::optional<DirectX::XMFLOAT4X4> World;
+    bool TwoSided = false;
+    unsigned int EmitterLight = 0;
 };
 
 class Scene

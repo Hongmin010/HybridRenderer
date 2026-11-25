@@ -72,7 +72,7 @@ namespace
 
 void ValidateShadowResults(const ShadowResult *results, const SurfaceInput *surfaces,
     const Scene &scene, const ShadowSettings &settings, unsigned int width, unsigned int height,
-    unsigned int frame, std::ostream *samples)
+    unsigned int frame, std::ostream *samples, bool checkFixture)
 {
     const auto triangles = GetTriangles(scene);
     const Point direction = {settings.LightX,settings.LightY,settings.LightZ};
@@ -143,7 +143,7 @@ void ValidateShadowResults(const ShadowResult *results, const SurfaceInput *surf
             }
         }
     }
-    if (!background || !hits || !misses || !floorShadow)
+    if (checkFixture && (!background || !hits || !misses || !floorShadow))
         throw std::runtime_error("Shadow fixture must exercise background, hit, miss, and an object casting a shadow on the floor.");
     std::cout << "PASS: Shadow frame " << frame << ": CPU checked ALL " << static_cast<size_t>(width)*height
         << " pixels; background=" << background << ", hit=" << hits << ", miss=" << misses

@@ -20,6 +20,7 @@ struct GasGeometry
     CUdeviceptr Indices = 0;
     CUdeviceptr Normals = 0;
     float AlbedoR = 0, AlbedoG = 0, AlbedoB = 0;
+    bool TwoSided = false;
 };
 
 // Static world-space triangle GAS. Borrows the SurfaceInput owner's CUDA context/stream.

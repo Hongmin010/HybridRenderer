@@ -82,6 +82,9 @@ private:
     float mTheta = -1.5707963f;
     float mPhi = 1.22f;
     float mRadius = 7.5f;
+    DirectX::XMFLOAT3 mOrbitTarget = {0,0,0};
+    DirectX::XMFLOAT3 mCameraUp = {0,1,0};
+    bool mCameraMoved = false;
 
     bool mLeftMouseDown = false;
 
